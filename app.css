@@ -203,3 +203,8 @@ select.field{ appearance:none; -webkit-appearance:none; }
 .wstat.bad{ color:#b3261e; font-weight:600; }
 .urlbox{ font-family:'IBM Plex Mono',monospace; font-size:12px; word-break:break-all; overflow-wrap:anywhere; padding:10px 12px; }
 .nb-actions2 .mini-key, .nb-actions .mini-key{ text-decoration:none; }
+
+.content > *{ flex-shrink:0; }
+.content .lead{ color:#3b3b41; }
+.fn-d{ color:#55524a; }
+.wstat{ min-height:64px; justify-content:center; }
