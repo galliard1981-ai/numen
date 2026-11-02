@@ -159,7 +159,7 @@ var VIDEO_STYLE = 'display: block; width: calc(100% + 40px); margin: 0 -20px; he
 function vHome() {
   shell(true, '<video id="homeSignVideo" playsinline muted autoplay preload="auto" src="assets/numen-home.webm" style="' + VIDEO_STYLE + '"></video>' +
     '<a class="cta" href="#/get">' + esc(t('start')) + '</a>' +
-    '<a class="mini-key big" id="homeScan" href="#/scan">' + rings(20) + esc(t('h_scan')) + '</a>');
+    '<a class="cta" id="homeScan" href="#/scan">' + rings(20) + esc(t('h_scan')) + '</a>');
   var v = document.getElementById('homeSignVideo');
   if (v) { var p = v.play && v.play(); if (p && p.catch) p.catch(function () {}); }
 }
@@ -180,7 +180,7 @@ function vGet() {
     else if (!standalone() && deferredInstall) {
       main = '<a class="cta" id="instBtn" href="#">' + ic(ICON.dl, 18, 2.2, '#2a2118') + esc(t('g_inst')) + '</a>';
     } else main = '';
-    var cont = main ? '<a class="mini-key big" href="#/touch">' + esc(t('continue')) + '</a>' : '<a class="cta" href="#/touch">' + esc(t('continue')) + '</a>';
+    var cont = main ? '<a class="cta" href="#/touch">' + esc(t('continue')) + '</a>' : '<a class="cta" href="#/touch">' + esc(t('continue')) + '</a>';
     var how = (!PLAY_URL && !standalone() && !deferredInstall) ? '<div class="card">' + li(t('g_inst_d')) + '</div>' : '';
     shell(false, '<span class="step">' + esc(t('step', { n: 2 })) + ' · ' + t('android') + '</span>' + eyesTv() +
       '<h1 class="h1 fun">' + esc(t('a_h1')) + '</h1><p class="lead center">' + esc(t('a_lead')) + '</p>' + main + how + cont +
@@ -197,7 +197,7 @@ function vTouch() {
     '<div class="tv-frame"><div class="tv-screen" style="height: 236px">' + TOUCH_SVG + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
     '<h1 class="h1">' + esc(t('t_h1')) + '</h1><p class="lead">' + esc(t('t_lead')) + '</p>' +
     '<div class="card"><div class="li"><span class="led"></span><span>' + t('t_b1') + '</span></div><div class="li"><span class="led"></span><span>' + t('t_b2') + '</span></div></div>' +
-    (nfc ? '<a class="cta" id="goScan" href="#/scan/new">' + esc(t('h_scan')) + '</a><a class="mini-key big" id="goSkip" href="#">' + esc(t('t_nochip')) + '</a>'
+    (nfc ? '<a class="cta" id="goScan" href="#/scan/new">' + esc(t('h_scan')) + '</a><a class="cta" id="goSkip" href="#">' + esc(t('t_nochip')) + '</a>'
          : '<a class="cta" id="goSkip" href="#">' + esc(t('continue')) + '</a>'));
   document.getElementById('goSkip').addEventListener('click', function (e) { e.preventDefault(); setHash('#/presets/' + randCode()); });
 }
@@ -219,26 +219,56 @@ var APPS = [
 ];
 function appDef(k) { return APPS.filter(function (a) { return a[0] === k; })[0] || null; }
 function clean(s) { return String(s || '').replace(/[|~]/g, ' ').trim().slice(0, 60); }
+function packT(u) { return String(u || '').trim().slice(0, 160).replace(/~/g, '%7E').replace(/\|/g, '%7C'); }
+function unpackT(u) { return String(u || '').replace(/%7E/g, '~').replace(/%7C/g, '|'); }
 function parseApps(str) {
   return String(str || '').split('|').map(function (p) {
-    if (p.indexOf('c~') === 0) { var q = p.split('~'); return q[2] ? { k: 'c', n: q[1] || q[2], u: q[2] } : null; }
-    return appDef(p) ? { k: p } : null;
+    var q = p.split('~');
+    if (q[0] === 'c') return q[2] ? { k: 'c', n: unpackT(q[1]) || unpackT(q[2]), u: unpackT(q[2]) } : null;
+    return appDef(q[0]) ? { k: q[0], u: unpackT(q[1]) } : null;
   }).filter(Boolean).slice(0, 4);
 }
 function encodeApps(list) {
   return list.map(function (s) {
-    if (s.k === 'c') return clean(s.u) ? 'c~' + clean(s.n || s.u) + '~' + clean(s.u) : '';
-    return s.k && appDef(s.k) ? s.k : '';
+    if (s.k === 'c') return clean(s.u) ? 'c~' + clean(s.n || s.u) + '~' + packT(s.u) : '';
+    return s.k && appDef(s.k) ? s.k + (String(s.u || '').trim() ? '~' + packT(s.u) : '') : '';
   }).filter(Boolean).join('|');
 }
-function appName(e) { return e.k === 'c' ? e.n : appDef(e.k)[1]; }
+var PH = { instagram: '@username / post link', facebook: 'page name / link', messenger: 'username', tiktok: '@username / video link', spotify: 'https://open.spotify.com/…', whatsapp: '+30 69…', youtube: '@channel / video link', telegram: '@username', x: '@username / post link', snapchat: 'username', gmail: 'name@example.com', maps: 'address / place' };
+function targetUrl(k, v) {
+  v = String(v || '').trim(); if (!v) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return v;
+  var u = v.replace(/^@/, ''), enc = encodeURIComponent;
+  switch (k) {
+    case 'instagram': return 'https://www.instagram.com/' + enc(u) + '/';
+    case 'facebook': return 'https://www.facebook.com/' + enc(u);
+    case 'messenger': return 'https://m.me/' + enc(u);
+    case 'tiktok': return 'https://www.tiktok.com/@' + enc(u);
+    case 'spotify': return 'https://open.spotify.com/user/' + enc(u);
+    case 'whatsapp': return 'https://wa.me/' + v.replace(/\D/g, '');
+    case 'youtube': return 'https://www.youtube.com/@' + enc(u);
+    case 'telegram': return 'https://t.me/' + enc(u);
+    case 'x': return 'https://x.com/' + enc(u);
+    case 'snapchat': return 'https://www.snapchat.com/add/' + enc(u);
+    case 'gmail': return 'mailto:' + v;
+    case 'maps': return 'https://www.google.com/maps/search/?api=1&query=' + enc(v);
+  }
+  return '';
+}
+function appName(e) { return e.k === 'c' ? e.n : appDef(e.k)[1] + (String(e.u || '').trim() ? ' · ' + String(e.u).trim().replace(/^https?:\/\/(www\.)?/, '').slice(0, 22) : ''); }
 function intentFor(pkg) {
   return 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=' + pkg +
     ';S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=' + pkg) + ';end';
 }
 function appHref(e) {
   var ios = platform() === 'ios';
-  if (e.k !== 'c') { var d = appDef(e.k); return ios ? d[3] : intentFor(d[2]); }
+  if (e.k !== 'c') {
+    var d = appDef(e.k), url = targetUrl(e.k, e.u);
+    if (!url) return ios ? d[3] : intentFor(d[2]);
+    var m = /^(https?):\/\/([^\/?#]+)([^#]*)/i.exec(url);
+    if (ios || !m) return url;
+    return 'intent://' + m[2] + m[3] + '#Intent;scheme=' + m[1].toLowerCase() + ';package=' + d[2] + ';S.browser_fallback_url=' + encodeURIComponent(url) + ';end';
+  }
   var u = String(e.u || '').trim();
   if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return u;
   if (/^[a-z][a-z0-9_]*(\.[a-z0-9_]+){2,}$/i.test(u) && !/\.(com|org|net|gr|io|eu|app)$/i.test(u)) return ios ? '' : intentFor(u);
@@ -273,6 +303,7 @@ function drawEd() {
     for (var i = 0; i < 4; i++) {
       var s = ed.slots[i], opts = [['', t('slot_none')]].concat(APPS.map(function (a) { return [a[0], a[1]]; })).concat([['c', t('slot_other')]]);
       body += '<label class="pg-field"><span class="pg-label">' + esc(t('slot', { n: i + 1 })) + '</span><select class="field" data-slot="' + i + '">' + selOpts(opts, s.k) + '</select></label>';
+      if (s.k && s.k !== 'c') body += '<input class="field" data-st="' + i + '" value="' + esc(s.u || '') + '" placeholder="' + esc(PH[s.k] || '') + '" aria-label="' + esc(t('f_target')) + '" autocapitalize="off" autocomplete="off" spellcheck="false"><span class="fn-d">' + esc(t('f_target')) + '</span>';
       if (s.k === 'c') body += '<div class="fn-two"><input class="field" data-sn="' + i + '" value="' + esc(s.n || '') + '" placeholder="' + esc(t('f_appname')) + '" maxlength="40"><input class="field" data-su="' + i + '" value="' + esc(s.u || '') + '" placeholder="' + esc(t('f_appaddr')) + '" autocapitalize="off" autocomplete="off" spellcheck="false"></div>';
     }
     body += '</div>';
@@ -292,7 +323,7 @@ function drawEd() {
   });
   c.addEventListener('change', function (e) {
     var el = e.target, i = el.getAttribute('data-slot');
-    if (i != null) { var old = ed.slots[+i]; ed.slots[+i] = el.value === 'c' ? { k: 'c', n: old.n || '', u: old.u || '' } : { k: el.value }; drawEd(); }
+    if (i != null) { var old = ed.slots[+i]; ed.slots[+i] = el.value === 'c' ? { k: 'c', n: old.n || '', u: old.u || '' } : { k: el.value, u: old.k === el.value ? old.u : '' }; drawEd(); }
     else if (el.getAttribute('data-pm')) ed.pm = el.value;
   });
   c.addEventListener('input', function (e) {
@@ -300,6 +331,7 @@ function drawEd() {
     if (el.getAttribute('data-t')) ed.title = el.value;
     else if (el.getAttribute('data-link')) ed.link = el.value;
     else if (el.getAttribute('data-pmin')) ed.pmin = el.value;
+    else if (el.getAttribute('data-st') != null) ed.slots[+el.getAttribute('data-st')].u = el.value;
     else if (el.getAttribute('data-sn') != null) ed.slots[+el.getAttribute('data-sn')].n = el.value;
     else if (el.getAttribute('data-su') != null) ed.slots[+el.getAttribute('data-su')].u = el.value;
   });
@@ -337,14 +369,15 @@ function vWrite(code) {
   api(code).catch(function () { return null; }).then(function (nb) {
     if (!nb) return setHash('#/notebooks');
     var o = fnOf(nb), url = chipBase() + code, can = nfcOK();
+    var why = !window.isSecureContext ? 'Not a secure (HTTPS) page' : (!('NDEFReader' in window) ? 'This browser has no Web NFC — use Chrome on an Android phone' : '');
     var sum = fnLabels(o.on).map(function (s) { return '<div class="li"><span class="led"></span><span>' + esc(s) + '</span></div>'; }).join('');
     shell(false, '<span class="step">' + esc(t('step', { n: 4 })) + '</span>' +
       '<div class="tv-frame"><div class="tv-screen" style="height: 200px">' + TOUCH_SVG + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
       '<h1 class="h1">' + esc(t('w_h1')) + '</h1><p class="lead">' + esc(nb.title) + '</p>' +
       '<div class="card"><div class="step" style="margin-bottom:4px">' + esc(t('w_sum')) + '</div>' + sum + '</div>' +
       (can ? '<p class="lead" style="font-size:14px">' + esc(t('w_d')) + '</p><div id="wst" class="wstat"></div><a class="cta" id="wbtn" href="#">' + esc(t('t_write')) + '</a>'
-           : '<p class="lead" style="font-size:14px">' + esc(t('w_none')) + '</p><div class="card urlbox" id="urlbox">' + esc(url) + '</div><a class="cta" id="cpy" href="#">' + esc(t('w_copy')) + '</a>') +
-      '<a class="mini-key big" href="#/notebooks">' + esc(t(can ? 'w_later' : 'w_done')) + '</a><p class="lead" style="font-size:12.5px">' + esc(t('w_hint')) + '</p>');
+           : '<p class="lead" style="font-size:14px">' + esc(t('w_none')) + '</p><p class="lead" style="font-size:12px">' + esc(why) + '</p><div class="card urlbox" id="urlbox">' + esc(url) + '</div><a class="cta" id="cpy" href="#">' + esc(t('w_copy')) + '</a>') +
+      '<a class="cta" href="#/notebooks">' + esc(t(can ? 'w_later' : 'w_done')) + '</a><p class="lead" style="font-size:12.5px">' + esc(t('w_hint')) + '</p>');
     var st = document.getElementById('wst'), btn = document.getElementById('wbtn');
     if (!can) {
       document.getElementById('cpy').addEventListener('click', function (e) {
@@ -369,7 +402,7 @@ function vWrite(code) {
         }, function (err) {
           if (fin) return; end(); st.className = 'wstat bad';
           var n = err && err.name;
-          st.textContent = n === 'NotAllowedError' ? t('w_off') : t('w_fail', { e: n === 'AbortError' ? 'timeout' : (n || 'error') });
+          st.textContent = (n === 'NotAllowedError' ? t('w_off') : t('w_fail', { e: n === 'AbortError' ? 'timeout' : (n || 'error') })) + ' [' + (n || '?') + (err && err.message ? ': ' + String(err.message).slice(0, 70) : '') + ']';
         });
       } catch (err) { end(); st.className = 'wstat bad'; st.textContent = t('w_fail', { e: (err && err.name) || 'error' }); }
     });
@@ -388,7 +421,7 @@ function vNotebooks() {
   }).join('') || '<div class="empty">' + esc(t('nb_empty')) + '</div>';
   var single = platform() === 'ios' && list.length >= 1;
   shell(false, '<span class="step">' + esc(t('nb_label')) + '</span><h1 class="h1">' + esc(t('nb_h1')) + '</h1>' + cards + (single ? '' :
-    '<a class="mini-key big" id="scanBtn" href="#/scan">' + esc(t('h_scan')) + '</a>' +
+    '<a class="cta" id="scanBtn" href="#/scan">' + esc(t('h_scan')) + '</a>' +
     '<a class="cta" id="addBtn" href="#/touch">' + ic(ICON.plus, 18, 2.4, '#2a2118') + esc(t('nb_add')) + '</a>'));
   Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
     b.addEventListener('click', function () {
@@ -405,7 +438,7 @@ function vScan(mode) {
   var edit = mode === 'new', nfc = nfcOK();
   shell(false, '<span class="step">' + esc(t('h_scan')).toUpperCase() + '</span>' + eyesTv() + '<h1 class="h1">' + esc(t('scan_h')) + '</h1><p class="lead">' + esc(t('scan_d')) + '</p>' +
     '<div class="step" id="scanmsg" style="text-align:center;min-height:14px">' + (nfc ? '' : esc(t('s_nonfc'))) + '</div>' +
-    '<a class="mini-key big" id="skip" href="#">' + esc(t('t_nochip')) + '</a>');
+    '<a class="cta" id="skip" href="#">' + esc(t('t_nochip')) + '</a>');
   startEyes();
   document.getElementById('skip').addEventListener('click', function (e) { e.preventDefault(); setHash('#/presets/' + randCode()); });
   if (!nfc) return;
@@ -484,8 +517,8 @@ function vRun(code) {
         : '<span class="val mono" style="position:relative;z-index:1;font-size:18px;color:#e2a23b;text-shadow:0 0 5px rgba(226,162,59,.5);text-align:center;padding:0 16px">' + esc(nb.title) + '</span>';
       shell(false, '<span class="step">' + esc(t('run_label')) + ' · ' + esc(nb.title) + '</span>' +
         '<div class="tv-frame"><div class="tv-screen" style="height: 150px;flex-direction:column;gap:8px">' + screen + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
-        (hasP ? '<a class="cta" id="fgo" href="#">' + esc(t(running ? 'f_pause' : 'f_start')) + '</a><button type="button" class="mini-key big" id="frs">' + esc(t('f_reset')) + '</button>' : '') +
-        btns + '<a class="mini-key big" href="#/presets/' + esc(code) + '">' + esc(t('tap_change')) + '</a>');
+        (hasP ? '<a class="cta" id="fgo" href="#">' + esc(t(running ? 'f_pause' : 'f_start')) + '</a><button type="button" class="cta" id="frs">' + esc(t('f_reset')) + '</button>' : '') +
+        btns + '<a class="cta" href="#/presets/' + esc(code) + '">' + esc(t('tap_change')) + '</a>');
       if (hasP) {
         document.getElementById('fgo').addEventListener('click', function (e) { e.preventDefault(); if (up) { up = false; left = total; } running = !running; draw(); });
         document.getElementById('frs').addEventListener('click', function () { running = false; up = false; left = total; draw(); });
