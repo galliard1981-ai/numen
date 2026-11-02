@@ -448,29 +448,37 @@ function vScan(mode) {
     var rd = new NDEFReader();
     rd.scan({ signal: scanAbort.signal }).then(function () {
       rd.onreading = function (ev) {
-        if (handled) return; handled = true;
-        var recs = ev.message ? ev.message.records : [], code = null;
-        for (var i = 0; i < recs.length && !code; i++) {
-          try { var m = /(?:\/r\/|#\/tap\/)([A-Za-z0-9_-]{3,32})/.exec(new TextDecoder().decode(recs[i].data)); if (m) code = m[1]; } catch (e) {}
+        if (handled) return;
+        var recs = ev.message ? ev.message.records : [], code = null, seen = [];
+        for (var i = 0; i < recs.length; i++) {
+          try {
+            var d = recs[i].data, txt = d ? new TextDecoder().decode(d) : '';
+            if (txt) seen.push(txt);
+            var m = /(?:\/r\/|\/tap\/)([A-Za-z0-9_-]{3,32})/.exec(txt); if (m && !code) code = m[1];
+          } catch (e) {}
         }
         try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
-        if (code) setHash(edit ? '#/presets/' + code : '#/tap/' + code);
-        else setHash('#/presets/' + randCode());
+        if (code) { handled = true; setHash(edit ? '#/presets/' + code : '#/tap/' + code); }
+        else if (!seen.length) { handled = true; setHash('#/presets/' + randCode()); }
+        else { var mm = document.getElementById('scanmsg'); if (mm) mm.textContent = t('s_other') + ' ' + seen.join(' | ').slice(0, 90); }
       };
     }).catch(function () { var m = document.getElementById('scanmsg'); if (m) m.textContent = t('s_err'); });
   } catch (e) { var m2 = document.getElementById('scanmsg'); if (m2) m2.textContent = t('s_err'); }
 }
+function vNotFound(code) {
+  var codes = nbs().map(function (n) { return n.code; });
+  shell(false, '<span class="step">' + esc(t('tap_label')) + '</span>' +
+    '<div class="tv-frame"><div class="tv-screen" style="height: 200px">' + TOUCH_SVG + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
+    '<h1 class="h1">' + esc(t('nf_h')) + '</h1><p class="lead">' + esc(t('nf_d', { c: code })) + '</p>' +
+    '<p class="lead" style="font-size:12px;font-family:\'IBM Plex Mono\',monospace;word-break:break-all">' + esc('saved here: ' + (codes.join(', ') || '—') + ' · ' + (standalone() ? 'installed app' : 'browser')) + '</p>' +
+    '<a class="cta" href="#/scan">' + esc(t('h_scan')) + '</a><a class="cta" href="#/presets/' + esc(code) + '">' + esc(t('nf_setup')) + '</a>');
+}
 function vTap(code) {
-  if (!CODE_RE.test(code || '')) return setHash('#/home');
-  shell(false, '<span class="step">' + esc(t('tap_label')) + '</span>' + eyesTv() + '<h1 class="h1">' + esc(t('tap_search')) + '</h1>');
-  startEyes();
-  var wait = new Promise(function (r) { setTimeout(r, 1800); });
-  Promise.all([api(code).catch(function () { return undefined; }), wait]).then(function (res) {
-    var nb = res[0];
-    if (!document.getElementById('eyeImg')) return;
-    clearTimers();
+  if (!CODE_RE.test(code || '')) return setHash('#/scan');
+  shell(false, '<span class="step">' + esc(t('tap_label')) + '</span><div class="empty">…</div>');
+  api(code).catch(function () { return undefined; }).then(function (nb) {
     if (nb === undefined) { shell(false, '<div class="empty">…</div>'); return; }
-    if (nb === null) { location.replace('#/presets/' + code); return; }
+    if (nb === null) { vNotFound(code); return; }
     remember(code, nb);
     var o = fnOf(nb);
     if (!o.on) { location.replace('#/presets/' + code); return; }
