@@ -377,7 +377,7 @@ function vWrite(code) {
       '<div class="card"><div class="step" style="margin-bottom:4px">' + esc(t('w_sum')) + '</div>' + sum + '</div>' +
       (can ? '<p class="lead" style="font-size:14px">' + esc(t('w_d')) + '</p><div id="wst" class="wstat"></div><a class="cta" id="wbtn" href="#">' + esc(t('t_write')) + '</a>'
            : '<p class="lead" style="font-size:14px">' + esc(t('w_none')) + '</p><p class="lead" style="font-size:12px">' + esc(why) + '</p><div class="card urlbox" id="urlbox">' + esc(url) + '</div><a class="cta" id="cpy" href="#">' + esc(t('w_copy')) + '</a>') +
-      '<a class="cta" href="#/notebooks">' + esc(t(can ? 'w_later' : 'w_done')) + '</a><p class="lead" style="font-size:12.5px">' + esc(t('w_hint')) + '</p>');
+      '<a class="cta" id="later" href="#/notebooks">' + esc(t(can ? 'w_later' : 'w_done')) + '</a><p class="lead" style="font-size:12.5px">' + esc(t('w_hint')) + '</p>');
     var st = document.getElementById('wst'), btn = document.getElementById('wbtn');
     if (!can) {
       document.getElementById('cpy').addEventListener('click', function (e) {
@@ -386,6 +386,11 @@ function vWrite(code) {
         try { navigator.clipboard.writeText(url).then(done, done); } catch (x) { done(); }
       });
       return;
+    }
+    function showRes(ok, title, detail) {
+      st.className = 'wstat wres ' + (ok ? 'ok' : 'bad');
+      st.innerHTML = '<span class="wico">' + (ok ? '✓' : '✕') + '</span><span class="wtt">' + esc(title) + '</span>' + (detail ? '<span class="wdt">' + esc(detail) + '</span>' : '');
+      try { st.scrollIntoView({ block: 'center' }); } catch (x) {}
     }
     btn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -397,14 +402,15 @@ function vWrite(code) {
       function end() { if (timer) { clearInterval(timer); timer = null; } btn.style.display = ''; }
       try {
         new NDEFReader().write({ records: [{ recordType: 'url', data: url }] }, { signal: ctl.signal }).then(function () {
-          fin = true; end(); st.className = 'wstat ok'; st.textContent = '✓ ' + t('w_ok'); btn.textContent = t('w_again');
-          try { navigator.vibrate && navigator.vibrate(120); } catch (x) {}
+          fin = true; end(); showRes(true, t('w_ok'), ''); btn.textContent = t('w_again'); document.getElementById('later').textContent = t('w_done');
+          try { navigator.vibrate && navigator.vibrate([80, 60, 80]); } catch (x) {}
         }, function (err) {
-          if (fin) return; end(); st.className = 'wstat bad';
+          if (fin) return; end();
           var n = err && err.name;
-          st.textContent = (n === 'NotAllowedError' ? t('w_off') : t('w_fail', { e: n === 'AbortError' ? 'timeout' : (n || 'error') })) + ' [' + (n || '?') + (err && err.message ? ': ' + String(err.message).slice(0, 70) : '') + ']';
+          showRes(false, t('w_failh'), (n === 'NotAllowedError' ? t('w_off') : t('w_fail', { e: n === 'AbortError' ? 'timeout' : (n || 'error') })) + ' [' + (n || '?') + (err && err.message ? ': ' + String(err.message).slice(0, 70) : '') + ']');
+          try { navigator.vibrate && navigator.vibrate(400); } catch (x) {}
         });
-      } catch (err) { end(); st.className = 'wstat bad'; st.textContent = t('w_fail', { e: (err && err.name) || 'error' }); }
+      } catch (err) { end(); showRes(false, t('w_failh'), t('w_fail', { e: (err && err.name) || 'error' })); }
     });
   });
 }
