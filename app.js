@@ -70,7 +70,7 @@ function ssd(ch, cls) {
 function nbs() { return store.get('numen.nbs', []); }
 function remember(code, nb) {
   var list = nbs().filter(function (x) { return x.code !== code; });
-  list.unshift({ code: code, title: nb.title, preset: nb.preset });
+  list.unshift({ code: code, title: nb.title, preset: nb.preset, fn: nb.fn || (nb.cfg && nb.cfg.on) || '' });
   store.set('numen.nbs', list);
 }
 function localNb(code) { return nbs().filter(function (x) { return x.code === code; })[0] || null; }
@@ -157,186 +157,275 @@ var VIDEO_STYLE = 'display: block; width: calc(100% + 40px); margin: 0 -20px; he
   '-webkit-mask-image: linear-gradient(to right, transparent 0, #000 9%, #000 91%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 9%, #000 91%, transparent 100%); -webkit-mask-composite: source-in; ' +
   'mask-image: linear-gradient(to right, transparent 0, #000 9%, #000 91%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 9%, #000 91%, transparent 100%); mask-composite: intersect';
 function vHome() {
-  shell(true, '<video id="homeSignVideo" playsinline muted autoplay preload="auto" src="assets/numen-home.webm" style="' + VIDEO_STYLE + '"></video><a class="cta" href="#/get">' + esc(t('start')) + '</a>');
+  shell(true, '<video id="homeSignVideo" playsinline muted autoplay preload="auto" src="assets/numen-home.webm" style="' + VIDEO_STYLE + '"></video>' +
+    '<a class="cta" href="#/get">' + esc(t('start')) + '</a>' +
+    '<a class="mini-key big" id="homeScan" href="#/scan">' + rings(20) + esc(t('h_scan')) + '</a>');
   var v = document.getElementById('homeSignVideo');
   if (v) { var p = v.play && v.play(); if (p && p.catch) p.catch(function () {}); }
 }
-function afterGet() { var c = sess.get('numen.claim'); return c ? '#/presets/' + c : '#/touch'; }
-function urlReadout() { return '<div class="readout"><span style="display:flex">' + ic(ICON.lock, 14, 2, '#9a9ca1') + '</span><span class="val">' + esc(chipBase().replace(/^https?:\/\//, '')) + 'xyz123</span></div>'; }
+var deferredInstall = null;
+window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; if (location.hash === '#/get') vGet(); });
+function standalone() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
 function vGet() {
   if (platform() === 'ios') {
     function sc(n, txt, icon) { return '<div class="card step-card">' + ssd(n) + '<span class="txt">' + txt + '</span>' + icon + '</div>'; }
-    shell(false, '<span class="step">' + esc(t('step', { n: 2 })) + ' · ' + t('iphone') + '</span>' + urlReadout() +
+    shell(false, '<span class="step">' + esc(t('step', { n: 2 })) + ' · ' + t('iphone') + '</span>' +
       '<h1 class="h1">' + esc(t('i_h1')) + '</h1><p class="lead">' + esc(t('i_lead')) + '</p>' +
       sc('1', t('i_s1'), ic(ICON.share, 26, 2)) + sc('2', t('i_s2'), ic(ICON.addh, 26, 2)) + sc('3', t('i_s3'), rings(26)) +
-      '<a class="cta" href="' + afterGet() + '">' + esc(t('continue')) + '</a>');
+      '<a class="cta" href="#/touch">' + esc(t('continue')) + '</a>');
   } else {
     var li = function (s) { return '<div class="li"><span class="led"></span><span>' + s + '</span></div>'; };
-    var play = PLAY_URL ? '<a class="cta" href="' + esc(PLAY_URL) + '">' + ic(ICON.dl, 18, 2.2, '#2a2118') + esc(t('a_play')) + '</a>'
-                        : '<a class="cta" href="' + afterGet() + '">' + esc(t('continue')) + '</a>';
-    shell(false, '<span class="step">' + esc(t('step', { n: 2 })) + ' · ' + t('android') + '</span>' + urlReadout() +
-      '' + eyesTv() + '' +
-      '<h1 class="h1 fun">' + esc(t('a_h1')) + '</h1><p class="lead center">' + esc(t('a_lead')) + '</p>' + play +
+    var inst = '', main;
+    if (PLAY_URL) main = '<a class="cta" href="' + esc(PLAY_URL) + '">' + ic(ICON.dl, 18, 2.2, '#2a2118') + esc(t('a_play')) + '</a>';
+    else if (!standalone() && deferredInstall) {
+      main = '<a class="cta" id="instBtn" href="#">' + ic(ICON.dl, 18, 2.2, '#2a2118') + esc(t('g_inst')) + '</a>';
+    } else main = '';
+    var cont = main ? '<a class="mini-key big" href="#/touch">' + esc(t('continue')) + '</a>' : '<a class="cta" href="#/touch">' + esc(t('continue')) + '</a>';
+    var how = (!PLAY_URL && !standalone() && !deferredInstall) ? '<div class="card">' + li(t('g_inst_d')) + '</div>' : '';
+    shell(false, '<span class="step">' + esc(t('step', { n: 2 })) + ' · ' + t('android') + '</span>' + eyesTv() +
+      '<h1 class="h1 fun">' + esc(t('a_h1')) + '</h1><p class="lead center">' + esc(t('a_lead')) + '</p>' + main + how + cont +
       '<div class="card">' + li(t('a_b1')) + li(t('a_b2')) + '</div>');
     startEyes();
+    var ib = document.getElementById('instBtn');
+    if (ib) ib.addEventListener('click', function (e) { e.preventDefault(); var d = deferredInstall; deferredInstall = null; try { d.prompt(); } catch (x) {} setHash('#/touch'); });
   }
 }
+function nfcOK() { return ('NDEFReader' in window) && window.isSecureContext; }
 function vTouch() {
-  var code = sess.get('numen.newcode');
-  if (!code) { code = randCode(); sess.set('numen.newcode', code); }
-  var canWrite = ('NDEFReader' in window) && window.isSecureContext;
+  var nfc = nfcOK();
   shell(false, '<span class="step">' + esc(t('step', { n: 3 })) + '</span>' +
     '<div class="tv-frame"><div class="tv-screen" style="height: 236px">' + TOUCH_SVG + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
-    '<h1 class="h1">' + esc(t('t_h1')) + '</h1><p class="lead">' + esc(t('scan_d')) + ' ' + esc(t('t_lead')) + '</p>' +
-    '<div class="readout code-row"><span style="display:flex;margin-right:8px">' + ic(ICON.lock, 14, 2, '#9a9ca1') + '</span><span class="val">' + esc(chipBase().replace(/^https?:\/\//, '')) + '</span><input class="code-in" id="code" value="' + esc(code) + '" maxlength="32" autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="chip code"></div>' +
+    '<h1 class="h1">' + esc(t('t_h1')) + '</h1><p class="lead">' + esc(t('t_lead')) + '</p>' +
     '<div class="card"><div class="li"><span class="led"></span><span>' + t('t_b1') + '</span></div><div class="li"><span class="led"></span><span>' + t('t_b2') + '</span></div></div>' +
-    (canWrite ? '<a class="cta" id="writeBtn" href="#" style="min-width:230px">' + esc(t('t_write')) + '</a><div class="step" id="nfcmsg" style="text-align:center"></div>' : '') +
-    '<a class="cta" id="goBtn" href="#">' + esc(t('continue')) + '</a>');
-  var inp = document.getElementById('code');
-  function cur() { var c = inp.value.trim(); return CODE_RE.test(c) ? c : null; }
-  inp.addEventListener('input', function () { var c = cur(); if (c) sess.set('numen.newcode', c); });
-  document.getElementById('goBtn').addEventListener('click', function (e) { e.preventDefault(); var c = cur(); if (c) { sess.set('numen.claim', c); setHash('#/presets/' + c); } else inp.focus(); });
-  var w = document.getElementById('writeBtn');
-  if (w) w.addEventListener('click', function (e) {
-    e.preventDefault(); var c = cur(); if (!c) { inp.focus(); return; }
-    var msg = document.getElementById('nfcmsg');
-    try {
-      new NDEFReader().write({ records: [{ recordType: 'url', data: chipBase() + c }] })
-        .then(function () { msg.textContent = t('t_written'); }, function () { msg.textContent = t('t_fail'); });
-    } catch (err) { msg.textContent = t('t_fail'); }
-  });
+    (nfc ? '<a class="cta" id="goScan" href="#/scan/new">' + esc(t('h_scan')) + '</a><a class="mini-key big" id="goSkip" href="#">' + esc(t('t_nochip')) + '</a>'
+         : '<a class="cta" id="goSkip" href="#">' + esc(t('continue')) + '</a>'));
+  document.getElementById('goSkip').addEventListener('click', function (e) { e.preventDefault(); setHash('#/presets/' + randCode()); });
 }
 
-var ed = null;
-function presetList() { return ['calendar', 'workspace', 'card', 'link'].concat(platform() === 'android' ? ['focus'] : []); }
-var PRESET_FIELDS = {
-  calendar: [['url', 'f_cal', 'https://calendar.google.com/…', 'url']],
-  workspace: [['url', 'f_ws', 'https://…', 'url']],
-  card: [['name', 'f_name', '', 'text'], ['phone', 'f_phone', '', 'tel'], ['email', 'f_email', '', 'email'], ['web', 'f_web', 'https://…', 'url']],
-  link: [['url', 'f_link', 'https://…', 'url']],
-  focus: [['w', 'f_wmin', '25', 'number', null, '25'], ['b', 'f_bmin', '5', 'number', null, '5'],
-          ['e', 'f_end', '', 'select', [['next', 'f_next'], ['stop', 'f_stop']], 'next'], ['s', 'f_snd', '', 'select', [['1', 'f_on'], ['0', 'f_off']], '1']]
-};
-function pageFields() {
-  var cfg = ed.cfgs[ed.preset] || (ed.cfgs[ed.preset] = {});
-  return PRESET_FIELDS[ed.preset].map(function (f) {
-    var v = cfg[f[0]] != null ? cfg[f[0]] : (f[5] || '');
-    if (f[3] === 'select') {
-      return '<label class="pg-field"><span class="pg-label">' + esc(t(f[1])) + '</span><select class="pg-input" data-f="' + f[0] + '">' + f[4].map(function (o) { return '<option value="' + o[0] + '"' + (String(v) === o[0] ? ' selected' : '') + '>' + esc(t(o[1])) + '</option>'; }).join('') + '</select></label>';
-    }
-    var ex = f[3] === 'number' ? ' inputmode="numeric" min="1" max="90"' : '';
-    return '<label class="pg-field"><span class="pg-label">' + esc(t(f[1])) + '</span><input class="pg-input" data-f="' + f[0] + '" type="' + f[3] + '"' + ex + ' value="' + esc(v) + '" placeholder="' + esc(f[2]) + '" autocapitalize="off" autocomplete="off" spellcheck="false"></label>';
-  }).join('');
+/* ---------- notebook model ---------- */
+var APPS = [
+  ['facebook', 'Facebook', 'com.facebook.katana', 'fb://'],
+  ['messenger', 'Messenger', 'com.facebook.orca', 'fb-messenger://'],
+  ['instagram', 'Instagram', 'com.instagram.android', 'instagram://'],
+  ['tiktok', 'TikTok', 'com.zhiliaoapp.musically', 'snssdk1233://'],
+  ['spotify', 'Spotify', 'com.spotify.music', 'spotify://'],
+  ['whatsapp', 'WhatsApp', 'com.whatsapp', 'whatsapp://'],
+  ['youtube', 'YouTube', 'com.google.android.youtube', 'youtube://'],
+  ['telegram', 'Telegram', 'org.telegram.messenger', 'tg://'],
+  ['x', 'X', 'com.twitter.android', 'twitter://'],
+  ['snapchat', 'Snapchat', 'com.snapchat.android', 'snapchat://'],
+  ['gmail', 'Gmail', 'com.google.android.gm', 'googlegmail://'],
+  ['maps', 'Google Maps', 'com.google.android.apps.maps', 'comgooglemaps://']
+];
+function appDef(k) { return APPS.filter(function (a) { return a[0] === k; })[0] || null; }
+function clean(s) { return String(s || '').replace(/[|~]/g, ' ').trim().slice(0, 60); }
+function parseApps(str) {
+  return String(str || '').split('|').map(function (p) {
+    if (p.indexOf('c~') === 0) { var q = p.split('~'); return q[2] ? { k: 'c', n: q[1] || q[2], u: q[2] } : null; }
+    return appDef(p) ? { k: p } : null;
+  }).filter(Boolean).slice(0, 4);
 }
-function drawPresets(anim) {
-  var list = presetList(), i = Math.max(0, list.indexOf(ed.preset)), n = list.length;
+function encodeApps(list) {
+  return list.map(function (s) {
+    if (s.k === 'c') return clean(s.u) ? 'c~' + clean(s.n || s.u) + '~' + clean(s.u) : '';
+    return s.k && appDef(s.k) ? s.k : '';
+  }).filter(Boolean).join('|');
+}
+function appName(e) { return e.k === 'c' ? e.n : appDef(e.k)[1]; }
+function intentFor(pkg) {
+  return 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=' + pkg +
+    ';S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=' + pkg) + ';end';
+}
+function appHref(e) {
+  var ios = platform() === 'ios';
+  if (e.k !== 'c') { var d = appDef(e.k); return ios ? d[3] : intentFor(d[2]); }
+  var u = String(e.u || '').trim();
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return u;
+  if (/^[a-z][a-z0-9_]*(\.[a-z0-9_]+){2,}$/i.test(u) && !/\.(com|org|net|gr|io|eu|app)$/i.test(u)) return ios ? '' : intentFor(u);
+  return normUrl(u);
+}
+function fnOf(nb) {
+  var c = nb.cfg || {}, o = { on: '', link: '', apps: '', pm: 'both', pmin: '25' };
+  if (nb.preset === 'multi') { o.on = c.on || ''; o.link = c.link || ''; o.apps = c.apps || ''; o.pm = c.pm || 'both'; o.pmin = c.pmin || '25'; }
+  else if (c.url && /^(calendar|workspace|link)$/.test(nb.preset)) { o.on = 'l'; o.link = c.url; }
+  else if (nb.preset === 'focus') { o.on = 'p'; o.pmin = c.w || '25'; o.pm = c.s === '0' ? 'vib' : 'both'; }
+  return o;
+}
+function fnLabels(on) {
+  var m = { l: 'c_l', a: 'c_a', p: 'c_p' };
+  return 'lap'.split('').filter(function (k) { return (on || '').indexOf(k) >= 0; }).map(function (k) { return t(m[k]); });
+}
+
+/* ---------- program (menu) ---------- */
+var ed = null;
+function keyBtn(on, attr, title, desc) {
+  return '<button type="button" class="cassette-key ' + (on ? 'on' : '') + '" ' + attr + ' aria-pressed="' + on + '"><span class="key-led"></span><span class="key-body"><span class="lang-name">' + esc(title) + '</span>' + (desc ? '<span class="fn-d">' + esc(desc) + '</span>' : '') + '</span></button>';
+}
+function selOpts(list, cur) { return list.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join(''); }
+function drawEd() {
+  var c0 = document.getElementById('content'), sc = c0 ? c0.scrollTop : 0;
+  var body = '';
+  body += keyBtn(ed.on.l, 'data-tg="l"', t('fn_link'), t('fn_link_d'));
+  if (ed.on.l) body += '<div class="card fn-body"><label class="pg-field"><span class="pg-label">' + esc(t('f_link')) + '</span><input class="field" data-link="1" type="url" value="' + esc(ed.link) + '" placeholder="https://…" autocapitalize="off" autocomplete="off" spellcheck="false"></label></div>';
+  body += keyBtn(ed.on.a, 'data-tg="a"', t('fn_apps'), t('fn_apps_d'));
+  if (ed.on.a) {
+    body += '<div class="card fn-body">';
+    for (var i = 0; i < 4; i++) {
+      var s = ed.slots[i], opts = [['', t('slot_none')]].concat(APPS.map(function (a) { return [a[0], a[1]]; })).concat([['c', t('slot_other')]]);
+      body += '<label class="pg-field"><span class="pg-label">' + esc(t('slot', { n: i + 1 })) + '</span><select class="field" data-slot="' + i + '">' + selOpts(opts, s.k) + '</select></label>';
+      if (s.k === 'c') body += '<div class="fn-two"><input class="field" data-sn="' + i + '" value="' + esc(s.n || '') + '" placeholder="' + esc(t('f_appname')) + '" maxlength="40"><input class="field" data-su="' + i + '" value="' + esc(s.u || '') + '" placeholder="' + esc(t('f_appaddr')) + '" autocapitalize="off" autocomplete="off" spellcheck="false"></div>';
+    }
+    body += '</div>';
+  }
+  body += keyBtn(ed.on.p, 'data-tg="p"', t('fn_prof'), t('fn_prof_d'));
+  if (ed.on.p) body += '<div class="card fn-body"><label class="pg-field"><span class="pg-label">' + esc(t('pm_label')) + '</span><select class="field" data-pm="1">' +
+    selOpts([['sound', t('pm_sound')], ['vib', t('pm_vib')], ['both', t('pm_both')], ['silent', t('pm_silent')]], ed.pm) + '</select></label>' +
+    '<label class="pg-field"><span class="pg-label">' + esc(t('pm_dur')) + '</span><input class="field" data-pmin="1" type="number" inputmode="numeric" min="1" max="99" value="' + esc(ed.pmin) + '"></label></div>';
   shell(false, '<span class="step">' + esc(t('step', { n: 4 })) + '</span>' +
     '<label class="field-wrap"><span class="step">' + esc(t('p_title')) + '</span><input class="field" data-t="1" type="text" value="' + esc(ed.title) + '" placeholder="' + esc(t('p_ph')) + '" maxlength="80" aria-label="' + esc(t('p_title')) + '"></label>' +
-    '<div class="nbk">' + '<div class="nbk-page ' + (anim || '') + '" id="page"><div class="pg-title">' + esc(t(ed.preset)) + '</div><div class="pg-desc">' + esc(t(ed.preset + '_d')) + '</div>' + pageFields() + '</div>' + '</div>' +
-    '<div class="nbk-nav"><button type="button" class="icon-btn" data-flip="-1" aria-label="‹">' + ic('<path d="M15 6l-6 6 6 6"/>', 16, 2.2) + '</button><span class="pg-count">' + (i + 1) + ' / ' + n + '</span><button type="button" class="icon-btn" data-flip="1" aria-label="›">' + ic('<path d="M9 6l6 6-6 6"/>', 16, 2.2) + '</button></div>' +
-    '<div class="readout fixed"><span class="cap" id="nextCap"><b>' + esc(t('p_next')) + '</b> ' + esc(t(ed.preset + '_n')) + '</span></div>' +
-    '<a class="cta" id="saveBtn" href="#">' + esc(t('save')) + '</a>');
-  function flip(step) { ed.preset = list[(i + step + n) % n]; drawPresets(step > 0 ? 'n0' : 'p0'); }
-  var c = document.getElementById('content');
+    '<span class="step">' + esc(t('ed_h')) + '</span>' + body +
+    '<div class="step" id="edmsg" style="text-align:center;min-height:14px"></div><a class="cta" id="saveBtn" href="#">' + esc(t('save')) + '</a>');
+  var c = document.getElementById('content'); c.scrollTop = sc;
   c.addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('[data-flip]');
-    if (b) { flip(+b.getAttribute('data-flip')); return; }
-    var pg = e.target.closest && e.target.closest('#page');
-    if (pg && !e.target.closest('input, label')) {
-      var r = pg.getBoundingClientRect();
-      flip(e.clientX - r.left > r.width / 2 ? 1 : -1);
-    }
+    var b = e.target.closest && e.target.closest('[data-tg]');
+    if (b) { var k = b.getAttribute('data-tg'); ed.on[k] = !ed.on[k]; drawEd(); }
+  });
+  c.addEventListener('change', function (e) {
+    var el = e.target, i = el.getAttribute('data-slot');
+    if (i != null) { var old = ed.slots[+i]; ed.slots[+i] = el.value === 'c' ? { k: 'c', n: old.n || '', u: old.u || '' } : { k: el.value }; drawEd(); }
+    else if (el.getAttribute('data-pm')) ed.pm = el.value;
   });
   c.addEventListener('input', function (e) {
     var el = e.target;
     if (el.getAttribute('data-t')) ed.title = el.value;
-    else if (el.getAttribute('data-f')) (ed.cfgs[ed.preset] || (ed.cfgs[ed.preset] = {}))[el.getAttribute('data-f')] = el.value;
+    else if (el.getAttribute('data-link')) ed.link = el.value;
+    else if (el.getAttribute('data-pmin')) ed.pmin = el.value;
+    else if (el.getAttribute('data-sn') != null) ed.slots[+el.getAttribute('data-sn')].n = el.value;
+    else if (el.getAttribute('data-su') != null) ed.slots[+el.getAttribute('data-su')].u = el.value;
   });
-  document.getElementById('saveBtn').addEventListener('click', function (e) { e.preventDefault(); savePreset(); });
+  document.getElementById('saveBtn').addEventListener('click', function (e) { e.preventDefault(); saveEd(); });
 }
-function savePreset() {
-  var cap = document.getElementById('nextCap');
-  var src = ed.cfgs[ed.preset] || {}, cfg = {};
-  if (ed.preset === 'calendar') cfg.url = normUrl(src.url) || 'https://calendar.google.com/calendar/u/0/r/day';
-  else if (ed.preset === 'workspace' || ed.preset === 'link') {
-    cfg.url = normUrl(src.url);
-    if (!cfg.url) { cap.innerHTML = '<b>' + esc(t('need_link')) + '</b>'; var f = document.querySelector('[data-f="url"]'); if (f) f.focus(); return; }
-  } else if (ed.preset === 'card') {
-    cfg.name = (src.name || '').trim(); cfg.phone = (src.phone || '').trim(); cfg.email = (src.email || '').trim(); cfg.web = normUrl(src.web);
-  } else if (ed.preset === 'focus') {
-    var clamp = function (v, d, lo, hi) { v = parseInt(v, 10); return String(isNaN(v) ? d : Math.max(lo, Math.min(hi, v))); };
-    cfg.w = clamp(src.w, 25, 5, 90); cfg.b = clamp(src.b, 5, 1, 30);
-    cfg.e = src.e === 'stop' ? 'stop' : 'next'; cfg.s = src.s === '0' ? '0' : '1';
-    try { localStorage.removeItem('numen.dur.' + ed.code); } catch (e) {}
-  }
+function saveEd() {
+  var msg = document.getElementById('edmsg'), on = { l: ed.on.l, a: ed.on.a, p: ed.on.p };
+  var link = '', apps = encodeApps(ed.slots);
+  if (on.l) { link = normUrl(ed.link); if (!link) { msg.textContent = t('need_link'); var f = document.querySelector('[data-link]'); if (f) f.focus(); return; } }
+  if (on.a && !apps) on.a = false;
+  var pmin = parseInt(ed.pmin, 10); pmin = String(isNaN(pmin) ? 25 : Math.max(1, Math.min(99, pmin)));
+  var letters = ('l' + 'a' + 'p').split('').filter(function (k) { return on[k]; }).join('');
+  if (!letters) { msg.textContent = t('need_fn'); return; }
   var title = (ed.title || '').trim() || t('p_ph');
-  put(ed.code, { title: title, preset: ed.preset, cfg: cfg }).then(function () {
-    remember(ed.code, { title: title, preset: ed.preset });
-    sess.set('numen.claim', null); sess.set('numen.newcode', null);
-    setHash('#/notebooks');
-  }, function () { cap.innerHTML = '<b>' + esc(t('save_fail')) + '</b>'; });
+  var cfg = { on: letters, link: link, apps: on.a ? apps : '', pm: ed.pm, pmin: pmin };
+  put(ed.code, { title: title, preset: 'multi', cfg: cfg }).then(function () {
+    remember(ed.code, { title: title, preset: 'multi', fn: letters });
+    setHash('#/write/' + ed.code);
+  }, function () { msg.textContent = t('save_fail'); });
 }
 function vPresets(code) {
   if (!CODE_RE.test(code || '')) return setHash('#/notebooks');
   api(code).catch(function () { return null; }).then(function (nb) {
-    var l = localNb(code);
-    ed = { code: code, title: nb ? nb.title : (l ? l.title : ''), preset: nb ? nb.preset : 'calendar', cfgs: {} };
-    if (nb && nb.cfg) ed.cfgs[nb.preset] = JSON.parse(JSON.stringify(nb.cfg));
-    if (presetList().indexOf(ed.preset) < 0 && nb && nb.preset !== 'focus') ed.preset = 'calendar';
-    if (presetList().indexOf(ed.preset) < 0) { ed.preset = 'calendar'; }
-    drawPresets();
+    var l = localNb(code), o = nb ? fnOf(nb) : { on: '', link: '', apps: '', pm: 'both', pmin: '25' };
+    var slots = parseApps(o.apps); while (slots.length < 4) slots.push({ k: '' });
+    ed = { code: code, title: nb ? nb.title : (l ? l.title : ''), on: { l: o.on.indexOf('l') >= 0, a: o.on.indexOf('a') >= 0, p: o.on.indexOf('p') >= 0 },
+           link: o.link, slots: slots, pm: o.pm, pmin: o.pmin };
+    drawEd();
   });
 }
 
+/* ---------- write to chip ---------- */
+function vWrite(code) {
+  if (!CODE_RE.test(code || '')) return setHash('#/notebooks');
+  api(code).catch(function () { return null; }).then(function (nb) {
+    if (!nb) return setHash('#/notebooks');
+    var o = fnOf(nb), url = chipBase() + code, can = nfcOK();
+    var sum = fnLabels(o.on).map(function (s) { return '<div class="li"><span class="led"></span><span>' + esc(s) + '</span></div>'; }).join('');
+    shell(false, '<span class="step">' + esc(t('step', { n: 4 })) + '</span>' +
+      '<div class="tv-frame"><div class="tv-screen" style="height: 200px">' + TOUCH_SVG + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
+      '<h1 class="h1">' + esc(t('w_h1')) + '</h1><p class="lead">' + esc(nb.title) + '</p>' +
+      '<div class="card"><div class="step" style="margin-bottom:4px">' + esc(t('w_sum')) + '</div>' + sum + '</div>' +
+      (can ? '<p class="lead" style="font-size:14px">' + esc(t('w_d')) + '</p><div id="wst" class="wstat"></div><a class="cta" id="wbtn" href="#">' + esc(t('t_write')) + '</a>'
+           : '<p class="lead" style="font-size:14px">' + esc(t('w_none')) + '</p><div class="card urlbox" id="urlbox">' + esc(url) + '</div><a class="cta" id="cpy" href="#">' + esc(t('w_copy')) + '</a>') +
+      '<a class="mini-key big" href="#/notebooks">' + esc(t(can ? 'w_later' : 'w_done')) + '</a><p class="lead" style="font-size:12.5px">' + esc(t('w_hint')) + '</p>');
+    var st = document.getElementById('wst'), btn = document.getElementById('wbtn');
+    if (!can) {
+      document.getElementById('cpy').addEventListener('click', function (e) {
+        e.preventDefault(); var b = this;
+        function done() { b.textContent = t('w_copied'); }
+        try { navigator.clipboard.writeText(url).then(done, done); } catch (x) { done(); }
+      });
+      return;
+    }
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      clearTimers();
+      var ctl = new AbortController(), left = 20, fin = false; scanAbort = ctl;
+      function wait() { st.className = 'wstat'; st.innerHTML = '<div class="wd">' + ssd(String(Math.floor(left / 10) % 10)) + ssd(String(left % 10)) + '</div><div>' + esc(t('w_wait', { s: '' })) + '</div>'; }
+      wait(); btn.style.display = 'none';
+      timer = setInterval(function () { left--; if (left <= 0) { clearInterval(timer); timer = null; try { ctl.abort(); } catch (x) {} } else wait(); }, 1000);
+      function end() { if (timer) { clearInterval(timer); timer = null; } btn.style.display = ''; }
+      try {
+        new NDEFReader().write({ records: [{ recordType: 'url', data: url }] }, { signal: ctl.signal }).then(function () {
+          fin = true; end(); st.className = 'wstat ok'; st.textContent = '✓ ' + t('w_ok'); btn.textContent = t('w_again');
+          try { navigator.vibrate && navigator.vibrate(120); } catch (x) {}
+        }, function (err) {
+          if (fin) return; end(); st.className = 'wstat bad';
+          var n = err && err.name;
+          st.textContent = n === 'NotAllowedError' ? t('w_off') : t('w_fail', { e: n === 'AbortError' ? 'timeout' : (n || 'error') });
+        });
+      } catch (err) { end(); st.className = 'wstat bad'; st.textContent = t('w_fail', { e: (err && err.name) || 'error' }); }
+    });
+  });
+}
+
+/* ---------- notebooks list ---------- */
 function vNotebooks() {
   var list = nbs();
   var cards = list.map(function (n) {
+    var chips = (n.fn ? fnLabels(n.fn) : [t(n.preset)]).map(function (s) { return '<span class="cap-chip">' + esc(s) + '</span>'; }).join('');
     return '<div class="card nb-card"><a class="nb-link" href="#/presets/' + esc(n.code) + '"><div class="nb-top"><span class="led"></span><span class="nb-title">' + esc(n.title) + '</span>' + ic(ICON.chev, 18, 2) + '</div>' +
-      '<div class="nb-bottom"><span class="cap-chip">' + esc(t(n.preset)) + '</span><span class="nb-code">' + esc(n.code) + '</span></div></a>' +
-      '<div class="nb-actions"><a class="mini-key prog" href="#/presets/' + esc(n.code) + '">' + esc(t('nb_prog')) + '</a></div><div class="nb-actions nb-actions2"><a class="mini-key" href="#/tap/' + esc(n.code) + '">' + esc(t('nb_try')) + '</a><button type="button" class="mini-key" data-del="' + esc(n.code) + '">' + esc(t('nb_del')) + '</button></div></div>';
+      '<div class="nb-bottom"><span class="chips">' + chips + '</span><span class="nb-code">' + esc(n.code) + '</span></div></a>' +
+      '<div class="nb-actions"><a class="mini-key prog" href="#/presets/' + esc(n.code) + '">' + esc(t('nb_prog')) + '</a><a class="mini-key" href="#/write/' + esc(n.code) + '">' + esc(t('nb_wr')) + '</a></div>' +
+      '<div class="nb-actions nb-actions2"><a class="mini-key" href="#/tap/' + esc(n.code) + '">' + esc(t('nb_try')) + '</a><button type="button" class="mini-key" data-del="' + esc(n.code) + '">' + esc(t('nb_del')) + '</button></div></div>';
   }).join('') || '<div class="empty">' + esc(t('nb_empty')) + '</div>';
   var single = platform() === 'ios' && list.length >= 1;
   shell(false, '<span class="step">' + esc(t('nb_label')) + '</span><h1 class="h1">' + esc(t('nb_h1')) + '</h1>' + cards + (single ? '' :
-    '<a class="mini-key" id="scanBtn" href="#/scan" style="align-self:center;flex:none;min-width:230px">' + esc(t('scan_btn')) + '</a>' +
+    '<a class="mini-key big" id="scanBtn" href="#/scan">' + esc(t('h_scan')) + '</a>' +
     '<a class="cta" id="addBtn" href="#/touch">' + ic(ICON.plus, 18, 2.4, '#2a2118') + esc(t('nb_add')) + '</a>'));
-  if (document.getElementById('addBtn')) document.getElementById('addBtn').addEventListener('click', function () { sess.set('numen.claim', null); sess.set('numen.newcode', null); });
   Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function (b) {
     b.addEventListener('click', function () {
       var code = b.getAttribute('data-del');
       if (!window.confirm(t('nb_del_q'))) return;
       store.set('numen.nbs', nbs().filter(function (x) { return x.code !== code; }));
-      try { localStorage.removeItem('numen.tasks.' + code); } catch (e) {}
       delNb(code).then(function () { vNotebooks(); });
     });
   });
 }
 
-function runNb(code, nb) {
-  var c = nb.cfg || {};
-  if ((nb.preset === 'calendar' || nb.preset === 'workspace' || nb.preset === 'link') && c.url) { location.href = c.url; return; }
-  if (nb.preset === 'card') { setHash('#/card/' + code); return; }
-  if (nb.preset === 'focus') { setHash('#/focus/' + code); return; }
-  setHash('#/presets/' + code);
-}
-function vScan() {
-  shell(false, '<span class="step">' + esc(t('scan_btn')).toUpperCase() + '</span>' + eyesTv() + '<h1 class="h1">' + esc(t('scan_h')) + '</h1><p class="lead">' + esc(t('scan_d')) + '</p>');
+/* ---------- scan / touch ---------- */
+function vScan(mode) {
+  var edit = mode === 'new', nfc = nfcOK();
+  shell(false, '<span class="step">' + esc(t('h_scan')).toUpperCase() + '</span>' + eyesTv() + '<h1 class="h1">' + esc(t('scan_h')) + '</h1><p class="lead">' + esc(t('scan_d')) + '</p>' +
+    '<div class="step" id="scanmsg" style="text-align:center;min-height:14px">' + (nfc ? '' : esc(t('s_nonfc'))) + '</div>' +
+    '<a class="mini-key big" id="skip" href="#">' + esc(t('t_nochip')) + '</a>');
   startEyes();
-  if (!('NDEFReader' in window) || !window.isSecureContext) return;
+  document.getElementById('skip').addEventListener('click', function (e) { e.preventDefault(); setHash('#/presets/' + randCode()); });
+  if (!nfc) return;
+  var handled = false;
   try {
     scanAbort = new AbortController();
     var rd = new NDEFReader();
     rd.scan({ signal: scanAbort.signal }).then(function () {
       rd.onreading = function (ev) {
-        var recs = ev.message ? ev.message.records : [];
-        for (var i = 0; i < recs.length; i++) {
-          try {
-            var txt = new TextDecoder().decode(recs[i].data), m = /(?:\/r\/|#\/tap\/)([A-Za-z0-9_-]{3,32})/.exec(txt);
-            if (m) { setHash('#/tap/' + m[1]); return; }
-          } catch (e) {}
+        if (handled) return; handled = true;
+        var recs = ev.message ? ev.message.records : [], code = null;
+        for (var i = 0; i < recs.length && !code; i++) {
+          try { var m = /(?:\/r\/|#\/tap\/)([A-Za-z0-9_-]{3,32})/.exec(new TextDecoder().decode(recs[i].data)); if (m) code = m[1]; } catch (e) {}
         }
+        try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
+        if (code) setHash(edit ? '#/presets/' + code : '#/tap/' + code);
+        else setHash('#/presets/' + randCode());
       };
-    }).catch(function () {});
-  } catch (e) {}
+    }).catch(function () { var m = document.getElementById('scanmsg'); if (m) m.textContent = t('s_err'); });
+  } catch (e) { var m2 = document.getElementById('scanmsg'); if (m2) m2.textContent = t('s_err'); }
 }
 function vTap(code) {
   if (!CODE_RE.test(code || '')) return setHash('#/home');
@@ -348,107 +437,73 @@ function vTap(code) {
     if (!document.getElementById('eyeImg')) return;
     clearTimers();
     if (nb === undefined) { shell(false, '<div class="empty">…</div>'); return; }
-    if (nb === null) { sess.set('numen.claim', code); location.replace('#/home'); return; }
+    if (nb === null) { location.replace('#/presets/' + code); return; }
     remember(code, nb);
-    var n = 3;
+    var o = fnOf(nb);
+    if (!o.on) { location.replace('#/presets/' + code); return; }
+    var n = 2, what = fnLabels(o.on).join(' · ');
     function draw() {
       shell(false, '<span class="step">' + esc(t('tap_label')) + '</span>' +
         '<div class="tv-frame"><div class="tv-screen" style="height: 330px; flex-direction: column; gap: 18px"><span class="val mono" style="position: relative; z-index: 1; font-size: 15px; color: #e2a23b; letter-spacing: 0.04em; text-shadow: 0 0 5px rgba(226,162,59,.5)">' + esc(nb.title) + '</span>' +
-        '<div style="position: relative; z-index: 1">' + ssd(String(n), 'big') + '</div><span style="position: relative; z-index: 1; font-size: 14px; color: #c9cbd0">' + esc(t('tap_opening', { x: t(nb.preset) })) + '</span><div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
+        '<div style="position: relative; z-index: 1">' + ssd(String(n), 'big') + '</div><span style="position: relative; z-index: 1; font-size: 14px; color: #c9cbd0">' + esc(t('tap_opening', { x: what })) + '</span><div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
         '<a class="cta" href="#/presets/' + esc(code) + '">' + esc(t('tap_change')) + '</a>');
     }
     draw();
-    timer = setInterval(function () { n--; if (n <= 0) { clearTimers(); runNb(code, nb); } else draw(); }, 1000);
+    timer = setInterval(function () { n--; if (n <= 0) { clearTimers(); location.replace('#/run/' + code); } else draw(); }, 1000);
   });
 }
 
+/* ---------- run ---------- */
 function withNb(code, fn) {
   if (!CODE_RE.test(code || '')) return setHash('#/notebooks');
   api(code).catch(function () { return null; }).then(function (nb) { if (!nb) return setHash('#/notebooks'); fn(nb); });
 }
-function vCard(code) {
-  withNb(code, function (nb) {
-    var c = nb.cfg || {};
-    var rows = [['f_phone', c.phone], ['f_email', c.email], ['f_web', c.web]].filter(function (r) { return r[1]; })
-      .map(function (r) { return '<div class="vrow"><b>' + esc(t(r[0])) + '</b><span>' + esc(r[1]) + '</span></div>'; }).join('');
-    shell(false, '<span class="step">' + esc(t('card')).toUpperCase() + '</span>' +
-      '<div class="tv-frame"><div class="tv-screen" style="min-height: 280px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 14px; padding: 24px"><span class="val mono" style="position:relative;z-index:1;font-size:20px;color:#e2a23b;text-shadow:0 0 5px rgba(226,162,59,.5)">' + esc(c.name || nb.title) + '</span><div style="position:relative;z-index:1;display:flex;flex-direction:column;gap:10px">' + rows + '</div><div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
-      '<a class="cta" id="vcf" href="#">' + esc(t('card_save')) + '</a>');
-    document.getElementById('vcf').addEventListener('click', function (e) {
-      e.preventDefault();
-      function v(s) { return String(s || '').replace(/[\r\n]+/g, ' ').replace(/([,;\\])/g, '\\$1'); }
-      var s = 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:' + v(c.name || nb.title) + '\r\n' + (c.phone ? 'TEL:' + v(c.phone) + '\r\n' : '') + (c.email ? 'EMAIL:' + v(c.email) + '\r\n' : '') + (c.web ? 'URL:' + String(c.web).replace(/[\r\n]/g, '') + '\r\n' : '') + 'END:VCARD\r\n';
-      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([s], { type: 'text/vcard' })); a.download = (c.name || nb.title || 'contact') + '.vcf';
-      document.body.appendChild(a); a.click(); a.remove();
-    });
-  });
+function beep(pm) {
+  if (pm === 'vib' || pm === 'both') { try { navigator.vibrate && navigator.vibrate([250, 120, 250, 120, 250]); } catch (e) {} }
+  if (pm === 'sound' || pm === 'both') {
+    try {
+      var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      var ac = new C(), t0 = ac.currentTime;
+      [0, 0.35, 0.7].forEach(function (o) { var os = ac.createOscillator(), g = ac.createGain(); os.frequency.value = 880; g.gain.setValueAtTime(0.0001, t0 + o); g.gain.exponentialRampToValueAtTime(0.4, t0 + o + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + o + 0.25); os.connect(g); g.connect(ac.destination); os.start(t0 + o); os.stop(t0 + o + 0.3); });
+      setTimeout(function () { try { ac.close(); } catch (e) {} }, 1500);
+    } catch (e) {}
+  }
 }
-function vFocus(code) {
+function digits(n) { var s = (n < 10 ? '0' : '') + n; return ssd(s[0], 'big2') + ssd(s[1], 'big2'); }
+function vRun(code) {
   withNb(code, function (nb) {
-    var dkey = 'numen.dur.' + code, c0 = nb.cfg || {}, cd = {};
-    if (c0.w) cd.w = parseInt(c0.w, 10) || 25; if (c0.b) cd.b = parseInt(c0.b, 10) || 5; if (c0.e) cd.e = c0.e; if (c0.s != null) cd.s = c0.s === '0' ? 0 : 1;
-    var dur = Object.assign({ w: 25, b: 5, e: 'next', s: 1 }, cd, store.get(dkey, {}));
-    var WORK = dur.w * 60, BREAK = dur.b * 60, mode = 'work', left = WORK, running = false;
-    var key = 'numen.tasks.' + code, tasks = store.get(key, []);
-    function durRow(k, label, v) {
-      return '<div class="dur-row"><span class="dur-l">' + esc(label) + '</span><button type="button" class="mini-key sq" data-dur="' + k + '-" aria-label="-">−</button><span class="dur-v">' + v + ' ' + esc(t('f_min')) + '</span><button type="button" class="mini-key sq" data-dur="' + k + '+" aria-label="+">+</button></div>';
-    }
-    function keyBtn(on, attr, label) { return '<button type="button" class="cassette-key ' + (on ? 'on' : '') + '" ' + attr + ' aria-pressed="' + on + '"><span class="key-led"></span><span class="lang-name" style="font-size:13px">' + esc(label) + '</span></button>'; }
-    function endBox() {
-      return '<div class="dur-l" style="margin-top:4px">' + esc(t('f_end')) + '</div><div class="lang-grid">' + keyBtn(dur.e === 'next', 'data-end="next"', t('f_next')) + keyBtn(dur.e === 'stop', 'data-end="stop"', t('f_stop')) + '</div>' +
-        keyBtn(!!dur.s, 'data-snd="1"', t('f_snd'));
-    }
-    function beep() {
-      try { navigator.vibrate && navigator.vibrate([200, 100, 200, 100, 200]); } catch (e) {}
-      try {
-        var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
-        var ac = new C(), t0 = ac.currentTime;
-        [0, 0.35, 0.7].forEach(function (o) { var os = ac.createOscillator(), g = ac.createGain(); os.frequency.value = 880; g.gain.setValueAtTime(0.0001, t0 + o); g.gain.exponentialRampToValueAtTime(0.4, t0 + o + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + o + 0.25); os.connect(g); g.connect(ac.destination); os.start(t0 + o); os.stop(t0 + o + 0.3); });
-        setTimeout(function () { try { ac.close(); } catch (e) {} }, 1500);
-      } catch (e) {}
-    }
-    function digits(n) { var s = (n < 10 ? '0' : '') + n; return ssd(s[0], 'big2') + ssd(s[1], 'big2'); }
+    var o = fnOf(nb), openers = [];
+    if (o.on.indexOf('l') >= 0 && o.link) openers.push({ label: t('r_link'), href: o.link });
+    if (o.on.indexOf('a') >= 0) parseApps(o.apps).forEach(function (a) { var h = appHref(a); if (h) openers.push({ label: t('r_app', { x: appName(a) }), href: h }); });
+    var hasP = o.on.indexOf('p') >= 0, total = Math.max(1, Math.min(99, parseInt(o.pmin, 10) || 25)) * 60, left = total, running = hasP, up = false, wl = null;
+    function lock() { try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function (l) { wl = l; }, function () {}); } catch (e) {} }
     function draw() {
-      var tl = tasks.map(function (k, i) { return '<div class="task ' + (k.d ? 'done' : '') + '"><button class="mini" data-tg="' + i + '" aria-label="toggle">' + (k.d ? '☑' : '☐') + '</button><span class="tt">' + esc(k.t) + '</span><button class="mini" data-rm="' + i + '" aria-label="remove">×</button></div>'; }).join('');
-      shell(false, '<span class="step">' + esc(t(mode === 'work' ? 'f_focus' : 'f_break')) + ' · ' + esc(nb.title) + '</span>' +
-        '<div class="tv-frame"><div class="tv-screen" style="height: 150px"><div style="position:relative;z-index:1;display:flex;align-items:center;font-size:56px">' + digits(Math.floor(left / 60)) + '<span class="colon"><i></i><i></i></span>' + digits(left % 60) + '</div><div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
-        '<a class="cta" id="fgo" href="#">' + esc(t(running ? 'f_pause' : 'f_start')) + '</a>' +
-        '<button type="button" class="mini-key" id="frs" style="align-self:center;flex:none;min-width:230px">' + esc(t('f_reset')) + '</button>' +
-        '<div class="card dur-card">' + durRow('w', t('f_focus'), dur.w) + durRow('b', t('f_break'), dur.b) + endBox() + '</div>' +
-        '<div class="card"><div id="tl">' + tl + '</div><input class="field" id="tin" placeholder="' + esc(t('f_add')) + '" style="margin-top:8px" maxlength="120"></div>');
-      Array.prototype.forEach.call(document.querySelectorAll('[data-dur]'), function (b) {
-        b.addEventListener('click', function () {
-          var a = b.getAttribute('data-dur'), k = a[0], d = a[1] === '+' ? 1 : -1;
-          var lim = k === 'w' ? [5, 90, 5] : [1, 30, 1];
-          dur[k] = Math.max(lim[0], Math.min(lim[1], dur[k] + d * lim[2]));
-          store.set(dkey, dur); WORK = dur.w * 60; BREAK = dur.b * 60;
-          if (!running) left = mode === 'work' ? WORK : BREAK;
-          draw();
-        });
-      });
-      Array.prototype.forEach.call(document.querySelectorAll('[data-end],[data-snd]'), function (b) {
-        b.addEventListener('click', function () {
-          if (b.getAttribute('data-end')) dur.e = b.getAttribute('data-end'); else dur.s = dur.s ? 0 : 1;
-          store.set(dkey, dur); draw();
-        });
-      });
-      document.getElementById('fgo').addEventListener('click', function (e) { e.preventDefault(); running = !running; draw(); });
-      document.getElementById('frs').addEventListener('click', function (e) { e.preventDefault(); running = false; mode = 'work'; left = WORK; draw(); });
-      document.getElementById('tin').addEventListener('keydown', function (e) { if (e.key === 'Enter' && this.value.trim()) { tasks.push({ t: this.value.trim(), d: 0 }); store.set(key, tasks); draw(); document.getElementById('tin').focus(); } });
-      document.getElementById('tl').addEventListener('click', function (e) {
-        var b = e.target.closest('button'); if (!b) return;
-        if (b.getAttribute('data-tg') != null) { var i = +b.getAttribute('data-tg'); tasks[i].d = tasks[i].d ? 0 : 1; } else if (b.getAttribute('data-rm') != null) tasks.splice(+b.getAttribute('data-rm'), 1); else return;
-        store.set(key, tasks); draw();
-      });
+      var btns = openers.map(function (x, i) { return '<a class="cta" href="' + esc(x.href) + '"' + (i === 0 && !hasP ? ' id="firstOpen"' : '') + '>' + esc(x.label) + '</a>'; }).join('');
+      var screen = hasP
+        ? '<div style="position:relative;z-index:1;display:flex;align-items:center;font-size:56px" id="dg">' + digits(Math.floor(left / 60)) + '<span class="colon"><i></i><i></i></span>' + digits(left % 60) + '</div>' + (up ? '<span style="position:relative;z-index:1;color:#e2a23b;font-size:14px">' + esc(t('r_up')) + '</span>' : '')
+        : '<span class="val mono" style="position:relative;z-index:1;font-size:18px;color:#e2a23b;text-shadow:0 0 5px rgba(226,162,59,.5);text-align:center;padding:0 16px">' + esc(nb.title) + '</span>';
+      shell(false, '<span class="step">' + esc(t('run_label')) + ' · ' + esc(nb.title) + '</span>' +
+        '<div class="tv-frame"><div class="tv-screen" style="height: 150px;flex-direction:column;gap:8px">' + screen + '<div class="avatar-glass"></div></div><div class="tv-foot"></div></div>' +
+        (hasP ? '<a class="cta" id="fgo" href="#">' + esc(t(running ? 'f_pause' : 'f_start')) + '</a><button type="button" class="mini-key big" id="frs">' + esc(t('f_reset')) + '</button>' : '') +
+        btns + '<a class="mini-key big" href="#/presets/' + esc(code) + '">' + esc(t('tap_change')) + '</a>');
+      if (hasP) {
+        document.getElementById('fgo').addEventListener('click', function (e) { e.preventDefault(); if (up) { up = false; left = total; } running = !running; draw(); });
+        document.getElementById('frs').addEventListener('click', function () { running = false; up = false; left = total; draw(); });
+      }
     }
     draw();
     clearTimers();
-    timer = setInterval(function () {
-      if (!running) return;
-      left--;
-      if (left <= 0) { if (dur.s) beep(); mode = mode === 'work' ? 'break' : 'work'; left = mode === 'work' ? WORK : BREAK; if (dur.e === 'stop') running = false; draw(); return; }
-      var tv = document.querySelector('.tv-screen div'); if (tv) tv.innerHTML = digits(Math.floor(left / 60)) + '<span class="colon"><i></i><i></i></span>' + digits(left % 60);
-    }, 1000);
+    if (hasP) {
+      lock();
+      timer = setInterval(function () {
+        if (!running) return;
+        left--;
+        if (left <= 0) { left = 0; running = false; up = true; beep(o.pm); draw(); return; }
+        var dg = document.getElementById('dg'); if (dg) dg.innerHTML = digits(Math.floor(left / 60)) + '<span class="colon"><i></i><i></i></span>' + digits(left % 60);
+      }, 1000);
+    } else if (openers.length === 1) {
+      timer = setTimeout(function () { location.href = openers[0].href; }, 700);
+    }
   });
 }
 
@@ -477,7 +532,7 @@ function route() {
   clearTimers();
   var h = location.hash.replace(/^#\/?/, '');
   var parts = h.split('/'), name = parts[0] || 'home', arg = parts[1];
-  var views = { home: vHome, get: vGet, touch: vTouch, presets: vPresets, notebooks: vNotebooks, tap: vTap, card: vCard, focus: vFocus, settings: vSettings, about: vAbout, ads: vAds, scan: vScan };
+  var views = { home: vHome, get: vGet, touch: vTouch, presets: vPresets, write: vWrite, run: vRun, notebooks: vNotebooks, tap: vTap, settings: vSettings, about: vAbout, ads: vAds, scan: vScan };
   (views[name] || vHome)(arg);
   var c = document.getElementById('content'); if (c) c.scrollTop = 0;
 }

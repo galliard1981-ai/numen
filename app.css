@@ -189,3 +189,17 @@ a{ color:inherit; text-decoration:none; }
 
 .h1.fun{ font-family:'Comfortaa','Space Grotesk',system-ui,sans-serif; font-weight:700; font-size:30px; text-align:center; letter-spacing:-.01em; margin-top:2px; }
 .lead.center{ text-align:center; }
+
+.mini-key.big{ flex:none; align-self:center; min-width:230px; min-height:50px; display:flex; align-items:center; justify-content:center; gap:8px; font-size:15px; text-decoration:none; }
+.fn-d{ font-size:12.5px; font-weight:400; line-height:1.35; color:#6a6454; }
+.fn-body{ display:flex; flex-direction:column; gap:10px; padding:12px; }
+.fn-two{ display:flex; flex-direction:column; gap:6px; }
+select.field{ appearance:none; -webkit-appearance:none; }
+.field option{ color:#2b2a27; background:#f5f1e6; }
+.chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.wstat{ display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; font-size:14px; line-height:1.4; min-height:0; }
+.wstat .wd{ display:flex; gap:6px; }
+.wstat.ok{ color:#1c8a46; font-weight:700; }
+.wstat.bad{ color:#b3261e; font-weight:600; }
+.urlbox{ font-family:'IBM Plex Mono',monospace; font-size:12px; word-break:break-all; overflow-wrap:anywhere; padding:10px 12px; }
+.nb-actions2 .mini-key, .nb-actions .mini-key{ text-decoration:none; }
